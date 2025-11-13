@@ -552,11 +552,11 @@ func addr(word uint16) uint16 {
 }
 
 func x(word uint16) uint8 {
-	return uint8(word & 0x0f00)
+	return uint8((word & 0x0f00) >> 8)
 }
 
 func y(word uint16) uint8 {
-	return uint8(word & 0x00f0)
+	return uint8((word & 0x00f0) >> 4)
 }
 
 func n(word uint16) uint8 {

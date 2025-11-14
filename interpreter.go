@@ -6,16 +6,19 @@ import (
 	"math/rand"
 )
 
-var ErrUnknownOpcode = errors.New("unknown opcode")
+const (
+	DisplayWidth  = 64
+	DisplayHeight = 32
+)
+
+const (
+	CPUFrequency   = 850
+	ClockFrequency = 60
+)
 
 const (
 	V0 uint8 = 0
 	VF uint8 = 15
-)
-
-const (
-	DisplayWidth  = 64
-	DisplayHeight = 32
 )
 
 var digitSprites [5 * 16]uint8 = [...]uint8{
@@ -37,6 +40,8 @@ var digitSprites [5 * 16]uint8 = [...]uint8{
 	0xF0, 0x80, 0xF0, 0x80, 0x80, // F
 }
 
+var ErrUnknownOpcode = errors.New("unknown opcode")
+
 type opcodeHandler func() error
 
 type Interpreter struct {
@@ -51,10 +56,12 @@ type Interpreter struct {
 	memory [4096]uint8
 
 	display [DisplayHeight][DisplayWidth]uint8
-	keys    [16]uint8
+	keys    [16]bool
 
 	opcode   uint16
 	dispatch [16]opcodeHandler
+
+	clockCycleCounter uint8
 }
 
 func NewInterpreter() *Interpreter {
@@ -84,6 +91,14 @@ func (i *Interpreter) Load(reader io.Reader) error {
 	return err
 }
 
+func (i *Interpreter) Display() [DisplayHeight][DisplayWidth]uint8 {
+	return i.display
+}
+
+func (i *Interpreter) SetKeyState(key Key, pressed bool) {
+	i.keys[key] = pressed
+}
+
 func (i *Interpreter) Cycle() error {
 	i.opcode = uint16(i.memory[i.pc])<<8 | uint16(i.memory[i.pc+1])
 
@@ -91,12 +106,18 @@ func (i *Interpreter) Cycle() error {
 		return err
 	}
 
-	if i.dt > 0 {
-		i.dt -= 1
-	}
+	if i.clockCycleCounter == CPUFrequency/ClockFrequency {
+		if i.dt > 0 {
+			i.dt -= 1
+		}
 
-	if i.st > 0 {
-		i.st -= 1
+		if i.st > 0 {
+			i.st -= 1
+		}
+
+		i.clockCycleCounter = 0
+	} else {
+		i.clockCycleCounter += 1
 	}
 
 	return nil
@@ -108,7 +129,6 @@ func (i *Interpreter) opHandler0() error {
 	// Clear the display.
 	case 0x00e0:
 		clear(i.display[:])
-		i.pc += 2
 
 	// 00EE - RET
 	// Return from a subroutine.
@@ -116,12 +136,14 @@ func (i *Interpreter) opHandler0() error {
 	// The interpreter sets the program counter to the address at the top of the
 	// stack, then subtracts 1 from the stack pointer.
 	case 0x00ee:
-		i.pc = i.stack[i.sp]
 		i.sp -= 1
+		i.pc = i.stack[i.sp]
 
 	default:
 		return ErrUnknownOpcode
 	}
+
+	i.pc += 2
 
 	return nil
 }
@@ -257,11 +279,7 @@ func (i *Interpreter) opHandler8() error {
 	// two values, and if the bits are not both the same, then the corresponding
 	// bit in the result is set to 1. Otherwise, it is 0.
 	case 0x0003:
-		if i.vx[x(i.opcode)] != i.vx[y(i.opcode)] {
-			i.vx[x(i.opcode)] = 1
-		} else {
-			i.vx[x(i.opcode)] = 0
-		}
+		i.vx[x(i.opcode)] ^= i.vx[y(i.opcode)]
 
 	// 8xy4 - ADD Vx, Vy
 	// Set Vx = Vx + Vy, set VF = carry.
@@ -395,24 +413,26 @@ func (i *Interpreter) opHandlerC() error {
 // is positioned so part of it is outside the coordinates of the display, it
 // wraps around to the opposite side of the screen.
 func (i *Interpreter) opHandlerD() error {
-	startX := x(i.opcode)
-	startY := y(i.opcode)
+	startX := i.vx[x(i.opcode)]
+	startY := i.vx[y(i.opcode)]
 	height := n(i.opcode)
 
 	i.vx[VF] = 0
 
 	for y := range height {
 		for x := range uint8(8) {
-			target := &i.display[((startY + y) % DisplayHeight)][(startX+x)%DisplayWidth]
+			target := &i.display[(startY+y)%DisplayHeight][(startX+x)%DisplayWidth]
 			old := *target
 
 			*target ^= (i.memory[i.i+uint16(y)] >> (7 - x)) & 1
 
-			if old != *target {
+			if old == 1 && *target == 0 {
 				i.vx[VF] = 1
 			}
 		}
 	}
+
+	i.pc += 2
 
 	return nil
 }
@@ -427,7 +447,7 @@ func (i *Interpreter) opHandlerE() error {
 	// currently in the down position, PC is increased by 2.
 	switch i.opcode & 0x00ff {
 	case 0x009e:
-		if i.keys[i.vx[x(i.opcode)]] != 0 {
+		if i.keys[i.vx[x(i.opcode)]] {
 			i.pc += 2
 		}
 
@@ -437,7 +457,7 @@ func (i *Interpreter) opHandlerE() error {
 	// Checks the keyboard, and if the key corresponding to the value of Vx is
 	// currently in the up position, PC is increased by 2.
 	case 0x00a1:
-		if i.keys[i.vx[x(i.opcode)]] == 0 {
+		if !i.keys[i.vx[x(i.opcode)]] {
 			i.pc += 2
 		}
 
@@ -466,7 +486,7 @@ func (i *Interpreter) opHandlerF() error {
 		pressed := false
 
 		for key, value := range i.keys {
-			if value != 0 {
+			if value {
 				pressed = true
 				i.vx[x(i.opcode)] = uint8(key)
 			}
@@ -495,7 +515,7 @@ func (i *Interpreter) opHandlerF() error {
 	//
 	// The values of I and Vx are added, and the results are stored in I.
 	case 0x001e:
-		i.memory[i.i] += i.vx[x(i.opcode)]
+		i.i += uint16(i.vx[x(i.opcode)])
 
 	// Fx29 - LD F, Vx
 	// Set I = location of sprite for digit Vx.
@@ -524,7 +544,7 @@ func (i *Interpreter) opHandlerF() error {
 	// The interpreter copies the values of registers V0 through Vx into memory,
 	// starting at the address in I.
 	case 0x0055:
-		for n := range i.vx[x(i.opcode)] {
+		for n := range x(i.opcode) + 1 {
 			i.memory[i.i+uint16(n)] = i.vx[n]
 		}
 
@@ -534,7 +554,7 @@ func (i *Interpreter) opHandlerF() error {
 	// The interpreter reads values from memory starting at location I into
 	// registers V0 through Vx.
 	case 0x0065:
-		for n := range i.vx[x(i.opcode)] {
+		for n := range x(i.opcode) + 1 {
 			i.vx[n] = i.memory[i.i+uint16(n)]
 		}
 

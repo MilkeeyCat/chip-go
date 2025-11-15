@@ -44,6 +44,8 @@ var ErrUnknownOpcode = errors.New("unknown opcode")
 
 type opcodeHandler func() error
 
+type beep func(on bool)
+
 type Interpreter struct {
 	pc uint16    // program counter
 	sp uint16    // stack pointer
@@ -62,11 +64,16 @@ type Interpreter struct {
 	dispatch [16]opcodeHandler
 
 	clockCycleCounter uint8
+
+	beep           beep
+	isSoundPlaying bool
 }
 
-func NewInterpreter() *Interpreter {
+func NewInterpreter(beep beep) *Interpreter {
 	interpreter := &Interpreter{
 		pc: 0x200,
+
+		beep: beep,
 	}
 
 	interpreter.dispatch = [...]opcodeHandler{
@@ -112,7 +119,17 @@ func (i *Interpreter) Cycle() error {
 		}
 
 		if i.st > 0 {
+			if !i.isSoundPlaying {
+				i.beep(true)
+				i.isSoundPlaying = true
+			}
+
 			i.st -= 1
+		} else {
+			if i.isSoundPlaying {
+				i.beep(false)
+				i.isSoundPlaying = false
+			}
 		}
 
 		i.clockCycleCounter = 0

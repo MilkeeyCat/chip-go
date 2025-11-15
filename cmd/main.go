@@ -56,7 +56,21 @@ func main() {
 	}
 	defer renderer.Destroy()
 
-	interpreter := chip8.NewInterpreter()
+	beeper, err := newBeeper()
+	if err != nil {
+		panic(err)
+	}
+	defer beeper.close()
+
+	beep := func(on bool) {
+		if on {
+			beeper.play()
+		} else {
+			beeper.stop()
+		}
+	}
+
+	interpreter := chip8.NewInterpreter(beep)
 	f, err := os.ReadFile(os.Args[1])
 	if err != nil {
 		panic(err)

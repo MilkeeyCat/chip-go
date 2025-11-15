@@ -326,8 +326,11 @@ func (i *Interpreter) opHandler8() error {
 	//
 	// If Vy > Vx, then VF is set to 1, otherwise 0. Then Vx is subtracted from
 	// Vy, and the results stored in Vx.
+	//
+	// NOTE: the docs say that the condition has to be Vy > Vx, but it's
+	// actually Vy >= Vx
 	case 0x0007:
-		if i.vx[y(i.opcode)] > i.vx[x(i.opcode)] {
+		if i.vx[y(i.opcode)] >= i.vx[x(i.opcode)] {
 			i.vx[VF] = 1
 		} else {
 			i.vx[VF] = 0

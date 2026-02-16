@@ -307,27 +307,31 @@ func (i *Interpreter) opHandler8() error {
 	case 0x0004:
 		sum := uint16(i.vx[x(i.opcode)]) + uint16(i.vx[y(i.opcode)])
 
+		i.vx[x(i.opcode)] = uint8(sum)
+
 		if sum > 255 {
 			i.vx[VF] = 1
 		} else {
 			i.vx[VF] = 0
 		}
 
-		i.vx[x(i.opcode)] = uint8(sum)
-
 	// 8xy5 - SUB Vx, Vy
 	// Set Vx = Vx - Vy, set VF = NOT borrow.
 	//
 	// If Vx > Vy, then VF is set to 1, otherwise 0. Then Vy is subtracted from
 	// Vx, and the results stored in Vx.
+	//
+	// NOTE: the docs say that the condition has to be Vx > Vy, but it's
+	// actually Vx >= Vy
 	case 0x0005:
-		if i.vx[x(i.opcode)] > i.vx[y(i.opcode)] {
-			i.vx[VF] = 1
-		} else {
-			i.vx[VF] = 0
+		var flag uint8
+
+		if i.vx[x(i.opcode)] >= i.vx[y(i.opcode)] {
+			flag = 1
 		}
 
 		i.vx[x(i.opcode)] -= i.vx[y(i.opcode)]
+		i.vx[VF] = flag
 
 	// 8xy6 - SHR Vx {, Vy}
 	// Set Vx = Vx SHR 1.
@@ -335,8 +339,10 @@ func (i *Interpreter) opHandler8() error {
 	// If the least-significant bit of Vx is 1, then VF is set to 1, otherwise
 	// 0. Then Vx is divided by 2.
 	case 0x0006:
-		i.vx[VF] = i.vx[x(i.opcode)] & 0x0001
+		flag := i.vx[x(i.opcode)] & 0x0001
+
 		i.vx[x(i.opcode)] >>= 1
+		i.vx[VF] = flag
 
 	// 8xy7 - SUBN Vx, Vy
 	// Set Vx = Vy - Vx, set VF = NOT borrow.
@@ -347,13 +353,14 @@ func (i *Interpreter) opHandler8() error {
 	// NOTE: the docs say that the condition has to be Vy > Vx, but it's
 	// actually Vy >= Vx
 	case 0x0007:
+		var flag uint8
+
 		if i.vx[y(i.opcode)] >= i.vx[x(i.opcode)] {
-			i.vx[VF] = 1
-		} else {
-			i.vx[VF] = 0
+			flag = 1
 		}
 
 		i.vx[x(i.opcode)] = i.vx[y(i.opcode)] - i.vx[x(i.opcode)]
+		i.vx[VF] = flag
 
 	// 8xyE - SHL Vx {, Vy}
 	// Set Vx = Vx SHL 1.
@@ -361,8 +368,10 @@ func (i *Interpreter) opHandler8() error {
 	// If the most-significant bit of Vx is 1, then VF is set to 1, otherwise to
 	// 0. Then Vx is multiplied by 2.
 	case 0x000E:
-		i.vx[VF] = i.vx[x(i.opcode)] >> 7
+		flag := i.vx[x(i.opcode)] >> 7
+
 		i.vx[x(i.opcode)] <<= 1
+		i.vx[VF] = flag
 
 	default:
 		return ErrUnknownOpcode
@@ -467,7 +476,7 @@ func (i *Interpreter) opHandlerE() error {
 	// currently in the down position, PC is increased by 2.
 	switch i.opcode & 0x00ff {
 	case 0x009e:
-		if i.keys[i.vx[x(i.opcode)]] {
+		if i.keys[i.vx[x(i.opcode)]&0x0f] {
 			i.pc += 2
 		}
 
@@ -477,7 +486,7 @@ func (i *Interpreter) opHandlerE() error {
 	// Checks the keyboard, and if the key corresponding to the value of Vx is
 	// currently in the up position, PC is increased by 2.
 	case 0x00a1:
-		if !i.keys[i.vx[x(i.opcode)]] {
+		if !i.keys[i.vx[x(i.opcode)]&0x0f] {
 			i.pc += 2
 		}
 
@@ -543,7 +552,7 @@ func (i *Interpreter) opHandlerF() error {
 	// The value of I is set to the location for the hexadecimal sprite
 	// corresponding to the value of Vx.
 	case 0x0029:
-		i.i = uint16(i.vx[x(i.opcode)] * 5)
+		i.i = uint16((i.vx[x(i.opcode)] & 0x0f) * 5)
 
 	// Fx33 - LD B, Vx
 	// Store BCD representation of Vx in memory locations I, I+1, and I+2.

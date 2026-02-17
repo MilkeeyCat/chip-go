@@ -57,8 +57,9 @@ type Interpreter struct {
 	stack  [16]uint16
 	memory [4096]uint8
 
-	display [DisplayHeight][DisplayWidth]uint8
-	keys    [16]bool
+	display         [DisplayHeight][DisplayWidth]uint8
+	keys            [16]bool
+	lastReleasedKey *Key
 
 	opcode   uint16
 	dispatch [16]opcodeHandler
@@ -104,6 +105,10 @@ func (i *Interpreter) Display() [DisplayHeight][DisplayWidth]uint8 {
 
 func (i *Interpreter) SetKeyState(key Key, pressed bool) {
 	i.keys[key] = pressed
+
+	if !pressed {
+		i.lastReleasedKey = &key
+	}
 }
 
 func (i *Interpreter) Cycle() error {
@@ -511,19 +516,16 @@ func (i *Interpreter) opHandlerF() error {
 	//
 	// All execution stops until a key is pressed, then the value of that key is
 	// stored in Vx.
+	//
+	// NOTE: it’s incorrect that the instruction waits for a key to be pressed,
+	// it waits for one to be released
 	case 0x000a:
-		pressed := false
-
-		for key, value := range i.keys {
-			if value {
-				pressed = true
-				i.vx[x(i.opcode)] = uint8(key)
-			}
-		}
-
-		if !pressed {
+		if i.lastReleasedKey == nil {
 			return nil
 		}
+
+		i.vx[x(i.opcode)] = uint8(*i.lastReleasedKey)
+		i.lastReleasedKey = nil
 
 	// Fx15 - LD DT, Vx
 	// Set delay timer = Vx.

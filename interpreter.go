@@ -447,15 +447,23 @@ func (i *Interpreter) opHandlerC() error {
 // is positioned so part of it is outside the coordinates of the display, it
 // wraps around to the opposite side of the screen.
 func (i *Interpreter) opHandlerD() error {
-	startX := i.vx[x(i.opcode)]
-	startY := i.vx[y(i.opcode)]
+	startX := i.vx[x(i.opcode)] % DisplayWidth
+	startY := i.vx[y(i.opcode)] % DisplayHeight
 	height := n(i.opcode)
 
 	i.vx[VF] = 0
 
 	for y := range height {
+		if startY+y >= DisplayHeight {
+			break
+		}
+
 		for x := range uint8(8) {
-			target := &i.display[(startY+y)%DisplayHeight][(startX+x)%DisplayWidth]
+			if startX+x >= DisplayWidth {
+				break
+			}
+
+			target := &i.display[startY+y][startX+x]
 			old := *target
 
 			*target ^= (i.memory[i.i+uint16(y)] >> (7 - x)) & 1

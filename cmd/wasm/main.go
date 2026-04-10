@@ -45,8 +45,17 @@ func main() {
 	var interpreter *chip8.Interpreter
 	var mu sync.Mutex
 	start := make(chan struct{})
+	beeper := func(on bool) {
+		beeper := js.Global().Get("window").Get("beeper")
 
-	setupROMLoader(&interpreter, nil, start, &mu)
+		if on {
+			beeper.Call("on")
+		} else {
+			beeper.Call("off")
+		}
+	}
+
+	setupROMLoader(&interpreter, beeper, start, &mu)
 
 	<-start
 

@@ -17,6 +17,31 @@
         <script src="wasm_exec.js"></script>
         <script>
             void async function() {
+                const audioCtx = new AudioContext();
+                const oscillator = audioCtx.createOscillator();
+                const gainNode = audioCtx.createGain();
+
+                oscillator.type = "square";
+                oscillator.frequency.value = 441;
+                gainNode.gain.value = 0;
+
+                oscillator.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
+                oscillator.start();
+
+                document.querySelector("#rom").addEventListener("change", (event) => {
+                    audioCtx.resume();
+                });
+
+                window.beeper = {
+                    on: function() {
+                        gainNode.gain.value = .05;
+                    },
+                    off: function() {
+                        gainNode.gain.value = 0;
+                    },
+                };
+
                 const go = new Go();
                 const result = await WebAssembly.instantiateStreaming(fetch("main.wasm"), go.importObject);
 

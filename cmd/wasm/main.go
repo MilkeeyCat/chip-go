@@ -36,8 +36,11 @@ func main() {
 	document := js.Global().Get("document")
 	canvas := document.Call("querySelector", "#canvas")
 
-	canvas.Set("width", chip8.DisplayWidth*scale)
-	canvas.Set("height", chip8.DisplayHeight*scale)
+	canvas.Set("width", chip8.DisplayWidth)
+	canvas.Set("height", chip8.DisplayHeight)
+
+	clampedArray := js.Global().Get("Uint8ClampedArray").New(chip8.DisplayWidth * chip8.DisplayHeight * 4)
+	js.Global().Set("imageData", js.Global().Get("ImageData").New(clampedArray, chip8.DisplayWidth))
 
 	ctx := canvas.Call("getContext", "2d")
 	keyboard := newKeyboard()
@@ -60,6 +63,9 @@ func main() {
 	<-start
 
 	drawingCycleCounter := 0
+	imageData := js.Global().Get("imageData")
+	imageDataBuf := imageData.Get("data")
+	var buf [chip8.DisplayWidth * chip8.DisplayHeight * 4]byte
 
 	for {
 		mu.Lock()
@@ -77,22 +83,23 @@ func main() {
 		}
 
 		if drawingCycleCounter == chip8.CPUFrequency/fps {
-			ctx.Call("clearRect", 0, 0, chip8.DisplayWidth*scale, chip8.DisplayHeight*scale)
-
 			for j, rows := range interpreter.Display() {
 				for i, value := range rows {
-					var color string
-
-					if value == 0 {
-						color = "rgba(0, 0, 0, 255)"
-					} else {
-						color = "rgba(255, 255, 255, 255)"
+					if value != 0 {
+						value = 255
 					}
 
-					ctx.Set("fillStyle", color)
-					ctx.Call("fillRect", i*scale, j*scale, scale, scale)
+					base := (j*chip8.DisplayWidth + i) * 4
+
+					buf[base+0] = value
+					buf[base+1] = value
+					buf[base+2] = value
+					buf[base+3] = 255
 				}
 			}
+
+			js.CopyBytesToJS(imageDataBuf, buf[:])
+			ctx.Call("putImageData", imageData, 0, 0)
 
 			drawingCycleCounter = 0
 		} else {
@@ -110,10 +117,10 @@ func setupROMLoader(interpreter **chip8.Interpreter, beep func(on bool), start c
 	var once sync.Once
 
 	input.Call("addEventListener", "change", js.FuncOf(func(this js.Value, args []js.Value) any {
-		args[0].Get("target").Get("files").Index(0).Call("bytes").Call("then", js.FuncOf(func(this js.Value, args []js.Value) any {
+		args[0].Get("target").Get("files").Index(0).Call("arrayBuffer").Call("then", js.FuncOf(func(this js.Value, args []js.Value) any {
 			var buf [4096]byte
 
-			js.CopyBytesToGo(buf[:], args[0])
+			js.CopyBytesToGo(buf[:], js.Global().Get("Uint8ClampedArray").New(args[0]))
 			mu.Lock()
 
 			*interpreter = chip8.NewInterpreter(beep)

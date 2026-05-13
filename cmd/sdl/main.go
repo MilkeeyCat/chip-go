@@ -48,13 +48,13 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	defer window.Destroy()
+	defer func() { _ = window.Destroy() }()
 
 	renderer, err := sdl.CreateRenderer(window, -1, 0)
 	if err != nil {
 		panic(err)
 	}
-	defer renderer.Destroy()
+	defer func() { _ = renderer.Destroy() }()
 
 	beeper, err := newBeeper()
 	if err != nil {
@@ -105,25 +105,35 @@ func main() {
 		}
 
 		if drawingCycleCounter == chip8.CPUFrequency/fps {
-			renderer.SetDrawColor(0, 0, 0, 255)
-			renderer.Clear()
+			if err := renderer.SetDrawColor(0, 0, 0, 255); err != nil {
+				panic(err)
+			}
+			if err := renderer.Clear(); err != nil {
+				panic(err)
+			}
 
 			display := interpreter.Display()
 
 			for j, rows := range display {
 				for i, value := range rows {
 					if value == 0 {
-						renderer.SetDrawColor(0, 0, 0, 255)
+						if err := renderer.SetDrawColor(0, 0, 0, 255); err != nil {
+							panic(err)
+						}
 					} else {
-						renderer.SetDrawColor(255, 255, 255, 255)
+						if err := renderer.SetDrawColor(255, 255, 255, 255); err != nil {
+							panic(err)
+						}
 					}
 
-					renderer.FillRect(&sdl.Rect{
+					if err := renderer.FillRect(&sdl.Rect{
 						Y: int32(j) * scale,
 						X: int32(i) * scale,
 						W: scale,
 						H: scale,
-					})
+					}); err != nil {
+						panic(err)
+					}
 				}
 			}
 
